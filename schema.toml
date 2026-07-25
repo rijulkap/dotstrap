@@ -1,0 +1,32 @@
+version = 1
+
+[package_managers.packman]
+description = "This is my package manager"
+platform = "windows_x64"
+check = "get"
+hint = "get not found"
+
+[tools.git]
+description = "Distributed version control"
+deps = ["rust"]
+tags = ["core"]
+check = "git"
+
+[tools.git.install]
+linux_x64 = [
+    "sudo apt-get update",
+    "sudo apt-get install -y git"
+]
+
+windows_x64 = [
+    "choco install git -y"
+]
+
+[tools.git.configs]
+description = "Git configuration"
+source = "git/.gitconfig"
+
+[tools.git.configs.targets]
+Linux_x64 = "~/.gitconfig"
+windows_x64 = "~/.gitconfig"
+
