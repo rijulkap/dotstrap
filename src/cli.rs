@@ -410,6 +410,32 @@ mod tests {
     use super::*;
     use clap::Parser;
 
+fn make_cli(tools_toml: &str, command: Command) -> DotManager {
+    let manifest_toml = format!(
+        r#"
+            version = 1
+
+            [package_managers]
+
+            {tools_toml}
+        "#
+    );
+
+    DotManager {
+        manifest: toml::from_str(&manifest_toml).unwrap(),
+        os: "windows_x64".to_owned(),
+        verbose: false,
+        command,
+    }
+}
+
+    fn selection(tools: &[&str], tags: &[&str]) -> SelectionArgs {
+        SelectionArgs {
+            tools: tools.iter().map(|value| value.to_string()).collect(),
+            tags: tags.iter().map(|value| value.to_string()).collect(),
+        }
+    }
+
     #[test]
     fn parses_install_command() {
         let cli = DotManager::try_parse_from([
@@ -433,5 +459,241 @@ mod tests {
             }
             _ => panic!("expected install command"),
         }
+    }
+
+    #[test]
+    fn empty_selection_selects_all_tools() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                [tools.rust]
+                [tools.neovim]
+            "#,
+            Command::Install(selection(&[], &[])),
+        );
+
+        let args = selection(&[], &[]);
+        let selected = cli.selected_tools(&args);
+
+        assert_eq!(selected.len(), 3);
+        assert!(selected.contains("git"));
+        assert!(selected.contains("rust"));
+        assert!(selected.contains("neovim"));
+    }
+
+    #[test]
+    fn selects_explicit_tools() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                [tools.rust]
+                [tools.neovim]
+            "#,
+            Command::Install(selection(&["git", "neovim"], &[])),
+        );
+
+        let args = selection(&["git", "neovim"], &[]);
+        let selected = cli.selected_tools(&args);
+
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains("git"));
+        assert!(selected.contains("neovim"));
+        assert!(!selected.contains("rust"));
+    }
+
+    #[test]
+    fn selects_tools_matching_tag() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                tags = ["core"]
+
+                [tools.rust]
+                tags = ["development"]
+
+                [tools.neovim]
+                tags = ["core", "editor"]
+            "#,
+            Command::Install(selection(&[], &["core"])),
+        );
+
+        let args = selection(&[], &["core"]);
+        let selected = cli.selected_tools(&args);
+
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains("git"));
+        assert!(selected.contains("neovim"));
+        assert!(!selected.contains("rust"));
+    }
+
+    #[test]
+    fn combines_explicit_tools_and_tags() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                tags = ["core"]
+
+                [tools.rust]
+                tags = ["development"]
+
+                [tools.neovim]
+                tags = ["editor"]
+            "#,
+            Command::Install(selection(&["rust"], &["core"])),
+        );
+
+        let args = selection(&["rust"], &["core"]);
+        let selected = cli.selected_tools(&args);
+
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains("rust"));
+        assert!(selected.contains("git"));
+    }
+
+    #[test]
+    fn resolve_tools_includes_dependencies() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                deps = ["rust"]
+
+                [tools.rust]
+                deps = ["compiler"]
+
+                [tools.compiler]
+            "#,
+            Command::Install(selection(&["git"], &[])),
+        );
+
+        let args = selection(&["git"], &[]);
+        let resolved = cli.resolve_tools(&args).unwrap();
+
+        assert_eq!(resolved.len(), 3);
+        assert!(resolved.contains("git"));
+        assert!(resolved.contains("rust"));
+        assert!(resolved.contains("compiler"));
+    }
+
+    #[test]
+    fn shared_dependency_is_only_resolved_once() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                deps = ["runtime"]
+
+                [tools.neovim]
+                deps = ["runtime"]
+
+                [tools.runtime]
+            "#,
+            Command::Install(selection(&["git", "neovim"], &[])),
+        );
+
+        let args = selection(&["git", "neovim"], &[]);
+        let resolved = cli.resolve_tools(&args).unwrap();
+
+        assert_eq!(resolved.len(), 3);
+        assert!(resolved.contains("git"));
+        assert!(resolved.contains("neovim"));
+        assert!(resolved.contains("runtime"));
+    }
+
+    #[test]
+    fn rejects_unknown_dependency() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                deps = ["missing-tool"]
+            "#,
+            Command::Install(selection(&["git"], &[])),
+        );
+
+        let args = selection(&["git"], &[]);
+        let selected = cli.selected_tools(&args);
+
+        let error = cli
+            .validate_dependencies_exist(&selected)
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "tool `git` depends on unknown tool `missing-tool`"
+        );
+    }
+
+    #[test]
+    fn rejects_direct_dependency_cycle() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                deps = ["git"]
+            "#,
+            Command::Install(selection(&["git"], &[])),
+        );
+
+        let args = selection(&["git"], &[]);
+        let selected = cli.selected_tools(&args);
+
+        let error = cli
+            .validate_no_dependency_cycles(&selected)
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "circular dependency detected: git -> git"
+        );
+    }
+
+    #[test]
+    fn rejects_indirect_dependency_cycle() {
+        let cli = make_cli(
+            r#"
+                [tools.git]
+                deps = ["rust"]
+
+                [tools.rust]
+                deps = ["cargo"]
+
+                [tools.cargo]
+                deps = ["git"]
+            "#,
+            Command::Install(selection(&["git"], &[])),
+        );
+
+        let args = selection(&["git"], &[]);
+        let selected = cli.selected_tools(&args);
+
+        let error = cli
+            .validate_no_dependency_cycles(&selected)
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "circular dependency detected: git -> rust -> cargo -> git"
+        );
+    }
+
+    #[test]
+    fn accepts_valid_dependency_graph() {
+        let cli = make_cli(
+            r#"
+                [tools.neovim]
+                deps = ["git", "rust"]
+
+                [tools.git]
+
+                [tools.rust]
+                deps = ["compiler"]
+
+                [tools.compiler]
+            "#,
+            Command::Install(selection(&["neovim"], &[])),
+        );
+
+        let args = selection(&["neovim"], &[]);
+        let selected = cli.selected_tools(&args);
+
+        assert!(cli.validate_dependencies_exist(&selected).is_ok());
+        assert!(cli.validate_no_dependency_cycles(&selected).is_ok());
     }
 }

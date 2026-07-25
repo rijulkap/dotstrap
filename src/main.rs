@@ -18,4 +18,9 @@ fn main() {
         eprintln!("error: {error}");
         std::process::exit(2);
     }
+
+    if let Err(error) = manager.validate() {
+        eprintln!("error: {error}");
+        std::process::exit(2);
+    }
 }
