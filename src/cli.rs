@@ -4,6 +4,7 @@ use std::path::Path;
 use std::{fs, path::PathBuf};
 
 use crate::dotfile::Manifest;
+use crate::manager::Manager;
 use crate::shell::check_executable;
 
 #[derive(Debug, Parser)]
@@ -59,18 +60,30 @@ pub struct SelectionArgs {
 }
 
 impl DotManager {
-    pub fn validate(&self) -> Result<(), String> {
-
+    pub fn validate(&self) -> Result<Option<Manager>, String> {
         match &self.command {
             Command::Install(args) => {
                 self.validate_os_has_pkgmgr()?;
                 self.validate_pkgmgr_is_exec()?;
                 self.validate_selection(args)?;
+                return Ok(Some(Manager {
+                    os: &self.os,
+                    manifest: &self.manifest,
+                    tool_chain: self.resolve_tools(args)?,
+                    selected_command: &self.command,
+                }));
             }
 
             Command::Configure(args) => {
                 self.validate_selection(args)?;
                 self.validate_selected_config_sources(args)?;
+
+                return Ok(Some(Manager {
+                    os: &self.os,
+                    manifest: &self.manifest,
+                    tool_chain: self.resolve_tools(args)?,
+                    selected_command: &self.command,
+                }));
             }
 
             Command::InstallAndConfigure(args) => {
@@ -78,15 +91,22 @@ impl DotManager {
                 self.validate_pkgmgr_is_exec()?;
                 self.validate_selection(args)?;
                 self.validate_selected_config_sources(args)?;
+
+                return Ok(Some(Manager {
+                    os: &self.os,
+                    manifest: &self.manifest,
+                    tool_chain: self.resolve_tools(args)?,
+                    selected_command: &self.command,
+                }));
             }
 
             Command::Validate => {
                 self.validate_all_manifest_dependencies()?;
                 self.validate_all_config_sources()?;
+
+                return Ok(None);
             }
         }
-
-        Ok(())
     }
 
     fn selected_tools<'a>(&'a self, args: &'a SelectionArgs) -> HashSet<&'a str> {
@@ -110,11 +130,19 @@ impl DotManager {
         selected
     }
 
-    fn resolve_tools<'a>(&'a self, args: &'a SelectionArgs) -> Result<HashSet<&'a str>, String> {
-        let mut resolved = HashSet::new();
+    fn resolve_tools<'a>(&'a self, args: &SelectionArgs) -> Result<Vec<&'a str>, String> {
+        let selected = self.selected_tools(args);
 
-        for tool in self.selected_tools(args) {
-            self.resolve_tool(tool, &mut resolved)?;
+        let mut selected: Vec<&str> = selected.into_iter().collect();
+
+        selected.sort_unstable();
+
+        let mut resolved = Vec::new();
+        let mut visited = HashSet::new();
+        let mut visiting = HashSet::new();
+
+        for tool_name in selected {
+            self.resolve_tool(tool_name, &mut visited, &mut visiting, &mut resolved)?;
         }
 
         Ok(resolved)
@@ -122,22 +150,51 @@ impl DotManager {
 
     fn resolve_tool<'a>(
         &'a self,
-        tool_name: &'a str,
-        resolved: &mut HashSet<&'a str>,
+        tool_name: &str,
+        visited: &mut HashSet<&'a str>,
+        visiting: &mut HashSet<&'a str>,
+        resolved: &mut Vec<&'a str>,
     ) -> Result<(), String> {
-        if !resolved.insert(tool_name) {
+        // Use the tool name owned by the manifest rather than the reference
+        // coming from SelectionArgs.
+        let (canonical_name, tool) = self
+            .manifest
+            .tools
+            .get_key_value(tool_name)
+            .ok_or_else(|| format!("tool `{tool_name}` does not exist in the manifest"))?;
+
+        let canonical_name = canonical_name.as_str();
+
+        if visited.contains(canonical_name) {
             return Ok(());
         }
 
-        let tool = self
-            .manifest
-            .tools
-            .get(tool_name)
-            .ok_or_else(|| format!("tool `{tool_name}` does not exist"))?;
-
-        for dependency in tool.deps.as_deref().unwrap_or_default() {
-            self.resolve_tool(dependency, resolved)?;
+        if !visiting.insert(canonical_name) {
+            return Err(format!(
+                "circular dependency detected while resolving `{canonical_name}`"
+            ));
         }
+
+        let mut dependencies: Vec<&str> = tool
+            .deps
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(String::as_str)
+            .collect();
+
+        // Gives deterministic ordering when a tool has several dependencies.
+        dependencies.sort_unstable();
+
+        for dependency in dependencies {
+            self.resolve_tool(dependency, visited, visiting, resolved)?;
+        }
+
+        visiting.remove(canonical_name);
+        visited.insert(canonical_name);
+
+        // Dependencies have already been added, so the tool comes afterwards.
+        resolved.push(canonical_name);
 
         Ok(())
     }
@@ -186,7 +243,7 @@ impl DotManager {
     }
 
     fn validate_selected_config_sources(&self, args: &SelectionArgs) -> Result<(), String> {
-        for tool_name in self.resolve_selected_tools(args) {
+        for tool_name in self.resolve_tools(args)? {
             self.validate_tool_config_source(tool_name)?;
         }
 
@@ -289,27 +346,6 @@ impl DotManager {
         Ok(())
     }
 
-    fn resolve_selected_tools<'a>(&'a self, args: &'a SelectionArgs) -> HashSet<&'a str> {
-        if args.tools.is_empty() && args.tags.is_empty() {
-            return self.manifest.tools.keys().map(String::as_str).collect();
-        }
-
-        let mut selected: HashSet<&str> = args.tools.iter().map(String::as_str).collect();
-
-        for (tool_name, tool) in &self.manifest.tools {
-            let matches_tag = args
-                .tags
-                .iter()
-                .any(|tag| tool.tags.as_ref().is_some_and(|tags| tags.contains(tag)));
-
-            if matches_tag {
-                selected.insert(tool_name.as_str());
-            }
-        }
-
-        selected
-    }
-
     fn validate_pkgmgr_is_exec(&self) -> Result<(), String> {
         let package_managers = self
             .manifest
@@ -409,24 +445,24 @@ mod tests {
     use super::*;
     use clap::Parser;
 
-fn make_cli(tools_toml: &str, command: Command) -> DotManager {
-    let manifest_toml = format!(
-        r#"
+    fn make_cli(tools_toml: &str, command: Command) -> DotManager {
+        let manifest_toml = format!(
+            r#"
             version = 1
 
             [package_managers]
 
             {tools_toml}
         "#
-    );
+        );
 
-    DotManager {
-        manifest: toml::from_str(&manifest_toml).unwrap(),
-        os: "windows_x64".to_owned(),
-        verbose: false,
-        command,
+        DotManager {
+            manifest: toml::from_str(&manifest_toml).unwrap(),
+            os: "windows_x64".to_owned(),
+            verbose: false,
+            command,
+        }
     }
-}
 
     fn selection(tools: &[&str], tags: &[&str]) -> SelectionArgs {
         SelectionArgs {
@@ -568,33 +604,28 @@ fn make_cli(tools_toml: &str, command: Command) -> DotManager {
         let resolved = cli.resolve_tools(&args).unwrap();
 
         assert_eq!(resolved.len(), 3);
-        assert!(resolved.contains("git"));
-        assert!(resolved.contains("rust"));
-        assert!(resolved.contains("compiler"));
+        assert_eq!(resolved, vec!["compiler", "rust", "git"]);
     }
 
     #[test]
     fn shared_dependency_is_only_resolved_once() {
         let cli = make_cli(
             r#"
-                [tools.git]
-                deps = ["runtime"]
+            [tools.git]
+            deps = ["runtime"]
 
-                [tools.neovim]
-                deps = ["runtime"]
+            [tools.neovim]
+            deps = ["runtime"]
 
-                [tools.runtime]
-            "#,
+            [tools.runtime]
+        "#,
             Command::Install(selection(&["git", "neovim"], &[])),
         );
 
         let args = selection(&["git", "neovim"], &[]);
         let resolved = cli.resolve_tools(&args).unwrap();
 
-        assert_eq!(resolved.len(), 3);
-        assert!(resolved.contains("git"));
-        assert!(resolved.contains("neovim"));
-        assert!(resolved.contains("runtime"));
+        assert_eq!(resolved, vec!["runtime", "git", "neovim"]);
     }
 
     #[test]
@@ -610,14 +641,9 @@ fn make_cli(tools_toml: &str, command: Command) -> DotManager {
         let args = selection(&["git"], &[]);
         let selected = cli.selected_tools(&args);
 
-        let error = cli
-            .validate_dependencies_exist(&selected)
-            .unwrap_err();
+        let error = cli.validate_dependencies_exist(&selected).unwrap_err();
 
-        assert_eq!(
-            error,
-            "tool `git` depends on unknown tool `missing-tool`"
-        );
+        assert_eq!(error, "tool `git` depends on unknown tool `missing-tool`");
     }
 
     #[test]
@@ -633,14 +659,9 @@ fn make_cli(tools_toml: &str, command: Command) -> DotManager {
         let args = selection(&["git"], &[]);
         let selected = cli.selected_tools(&args);
 
-        let error = cli
-            .validate_no_dependency_cycles(&selected)
-            .unwrap_err();
+        let error = cli.validate_no_dependency_cycles(&selected).unwrap_err();
 
-        assert_eq!(
-            error,
-            "circular dependency detected: git -> git"
-        );
+        assert_eq!(error, "circular dependency detected: git -> git");
     }
 
     #[test]
@@ -662,9 +683,7 @@ fn make_cli(tools_toml: &str, command: Command) -> DotManager {
         let args = selection(&["git"], &[]);
         let selected = cli.selected_tools(&args);
 
-        let error = cli
-            .validate_no_dependency_cycles(&selected)
-            .unwrap_err();
+        let error = cli.validate_no_dependency_cycles(&selected).unwrap_err();
 
         assert_eq!(
             error,

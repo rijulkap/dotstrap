@@ -11,16 +11,18 @@ use setup::{Mode, Setup};
 use std::{fs, path::PathBuf};
 
 fn main() {
-    // parse cli options
-    let manager = DotManager::parse();
+    let dotman = DotManager::parse();
 
-    if let Err(error) = manager.validate() {
-        eprintln!("error: {error}");
-        std::process::exit(2);
-    }
+    let manager = match dotman.validate() {
+        Ok(manager) => manager.unwrap(),
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(2);
+        }
+    };
 
-    if let Err(error) = manager.validate() {
+    if let Err(error) = manager.execute() {
         eprintln!("error: {error}");
-        std::process::exit(2);
+        std::process::exit(1);
     }
 }
