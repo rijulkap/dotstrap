@@ -90,3 +90,19 @@ cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps
 ```
+
+## Releases
+
+Pushing a tag whose name starts with `v` runs the release workflow on native
+Linux and Windows runners. For example:
+
+```console
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+After both builds and test suites pass, the workflow creates or updates the
+corresponding GitHub release with:
+
+- `dotstrap-linux-x64`
+- `dotstrap-windows-x64.exe`
