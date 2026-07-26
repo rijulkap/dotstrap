@@ -57,8 +57,6 @@ impl<'a> Manager<'a> {
         };
 
         for command in commands {
-            println!("Running `{command}`");
-
             if !check_executable(command) {
                 return Err(format!(
                     "failed to execute install command `{command}` for tool `{tool_name}`"
