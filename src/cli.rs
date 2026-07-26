@@ -60,7 +60,6 @@ pub struct SelectionArgs {
 
 impl DotManager {
     pub fn validate(&self) -> Result<(), String> {
-        self.validate_os_has_pkgmgr()?;
 
         match &self.command {
             Command::Install(args) => {
