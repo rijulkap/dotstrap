@@ -21,11 +21,17 @@ pub struct Manager<'a> {
     /// Dependency-ordered tool names to process.
     pub tool_chain: Vec<&'a str>,
 
+    /// Tools selected directly rather than introduced as dependencies.
+    pub selected_tools: Vec<&'a str>,
+
     /// Requested operation to apply to every tool in the chain.
     pub selected_command: &'a Command,
 
-    /// Whether normal installed-tool and existing-link checks are bypassed.
+    /// Whether checks are bypassed for directly selected tools.
     pub force: bool,
+
+    /// Whether checks are bypassed for the complete dependency chain.
+    pub force_all: bool,
 }
 
 impl<'a> Manager<'a> {
@@ -74,7 +80,7 @@ impl<'a> Manager<'a> {
 
     /// Installs a tool unless its check executable is already available.
     fn install_tool(&self, tool_name: &str, tool: &Tool) -> Result<(), String> {
-        if !self.force
+        if !self.should_force(tool_name)
             && let Some(check) = tool.check.as_deref()
             && executable_exists(check)
         {
@@ -99,7 +105,7 @@ impl<'a> Manager<'a> {
         refresh_environment_path()
             .map_err(|error| format!("installed `{tool_name}`, but {error}"))?;
 
-        if !self.force
+        if !self.should_force(tool_name)
             && let Some(check) = tool.check.as_deref()
             && !executable_exists(check)
         {
@@ -121,7 +127,7 @@ impl<'a> Manager<'a> {
             return Ok(());
         };
 
-        if self.force {
+        if self.should_force(tool_name) {
             remove_symlink(target).map_err(|error| {
                 format!("cannot replace configuration target for `{tool_name}`: {error}")
             })?;
@@ -137,6 +143,11 @@ impl<'a> Manager<'a> {
         }
 
         Ok(())
+    }
+
+    /// Returns whether force behavior applies to a tool in the current plan.
+    fn should_force(&self, tool_name: &str) -> bool {
+        self.force_all || (self.force && self.selected_tools.contains(&tool_name))
     }
 
     /// Removes a tool's configuration target when it is a symbolic link.
@@ -205,8 +216,10 @@ mod tests {
             os: "linux_x64",
             manifest: &manifest,
             tool_chain: Vec::new(),
+            selected_tools: vec!["test"],
             selected_command: &selected_command,
             force: false,
+            force_all: false,
         };
         manager.install_tool("test", &tool).unwrap();
         assert!(!marker.exists());
@@ -259,8 +272,10 @@ mod tests {
             os: "linux_x64",
             manifest: &manifest,
             tool_chain: Vec::new(),
+            selected_tools: vec!["test"],
             selected_command: &selected_command,
             force: false,
+            force_all: false,
         };
 
         assert!(manager.configure_tool("test", &tool).is_err());
@@ -277,5 +292,34 @@ mod tests {
         std::fs::remove_file(old_source).unwrap();
         std::fs::remove_file(new_source).unwrap();
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn force_only_applies_to_direct_selections() {
+        let manifest = empty_manifest();
+        let command = Command::Install(crate::cli::SelectionArgs {
+            tools: Vec::new(),
+            tags: Vec::new(),
+        });
+        let manager = Manager {
+            os: "linux_x64",
+            manifest: &manifest,
+            tool_chain: vec!["dependency", "selected"],
+            selected_tools: vec!["selected"],
+            selected_command: &command,
+            force: true,
+            force_all: false,
+        };
+
+        assert!(manager.should_force("selected"));
+        assert!(!manager.should_force("dependency"));
+
+        let force_all_manager = Manager {
+            force: false,
+            force_all: true,
+            ..manager
+        };
+        assert!(force_all_manager.should_force("selected"));
+        assert!(force_all_manager.should_force("dependency"));
     }
 }

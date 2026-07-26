@@ -49,12 +49,15 @@ impl DotManager {
         args: &SelectionArgs,
         planner: &ToolPlanner<'a>,
     ) -> Result<Manager<'a>, String> {
+        let plan = planner.plan(args)?;
         Ok(Manager {
             os: &self.os,
             manifest: &self.manifest,
-            tool_chain: planner.plan(args)?,
+            tool_chain: plan.tool_chain,
+            selected_tools: plan.selected_tools,
             selected_command: &self.command,
             force: self.force,
+            force_all: self.force_all,
         })
     }
 
@@ -173,6 +176,7 @@ mod tests {
             os: "linux_x64".to_owned(),
             verbose: false,
             force: false,
+            force_all: false,
             command,
         }
     }

@@ -58,10 +58,11 @@ An empty tool/tag selection means all tools.
 links. Missing targets are ignored, while ordinary files and directories are
 never deleted.
 
-Pass the global `--force` flag to reinstall tools even when their check
-executable already exists. During configuration it replaces an existing
-symlink before creating the new link. It never overwrites a regular file or
-directory.
+Pass the global `--force` flag to reinstall directly selected tools even when
+their check executable already exists. Dependencies retain their normal checks.
+Use `--force-all` to force the selected tools and their entire dependency
+chains. During configuration, forced tools replace an existing symlink before
+creating the new link. Neither mode overwrites a regular file or directory.
 
 ## Manifest
 

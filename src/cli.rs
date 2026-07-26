@@ -36,9 +36,13 @@ pub struct DotManager {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Reinstalls tools and replaces existing configuration symlinks.
-    #[arg(short, long, global = true)]
+    /// Forces directly selected tools, but not their dependencies.
+    #[arg(short, long, global = true, conflicts_with = "force_all")]
     pub force: bool,
+
+    /// Forces directly selected tools and their complete dependency chains.
+    #[arg(long, global = true, conflicts_with = "force")]
+    pub force_all: bool,
 
     /// Operation to perform after validation.
     #[command(subcommand)]
@@ -151,5 +155,29 @@ mod tests {
         .unwrap();
 
         assert!(cli.force);
+        assert!(!cli.force_all);
+    }
+
+    #[test]
+    fn parses_force_all_and_rejects_both_force_modes() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema.toml");
+        let base = [
+            "dotman",
+            "--manifest",
+            manifest.to_str().unwrap(),
+            "--os",
+            "linux_x64",
+            "install",
+        ];
+
+        let cli =
+            DotManager::try_parse_from(base.into_iter().chain(["--force-all", "--tools", "git"]))
+                .unwrap();
+        assert!(cli.force_all);
+        assert!(!cli.force);
+
+        assert!(
+            DotManager::try_parse_from(base.into_iter().chain(["--force", "--force-all"])).is_err()
+        );
     }
 }

@@ -11,6 +11,16 @@ pub(super) struct ToolPlanner<'a> {
     manifest: &'a Manifest,
 }
 
+/// Direct selections paired with their dependency-expanded execution order.
+#[derive(Debug)]
+pub(super) struct ToolPlan<'a> {
+    /// Tools selected explicitly, by tag, or through the select-all default.
+    pub(super) selected_tools: Vec<&'a str>,
+
+    /// Selected tools and transitive dependencies in execution order.
+    pub(super) tool_chain: Vec<&'a str>,
+}
+
 impl<'a> ToolPlanner<'a> {
     /// Creates a planner over a borrowed manifest.
     pub(super) fn new(manifest: &'a Manifest) -> Self {
@@ -18,14 +28,21 @@ impl<'a> ToolPlanner<'a> {
     }
 
     /// Validates and resolves a selection into dependency-first order.
-    pub(super) fn plan(&self, args: &SelectionArgs) -> Result<Vec<&'a str>, String> {
+    pub(super) fn plan(&self, args: &SelectionArgs) -> Result<ToolPlan<'a>, String> {
         self.validate_selected_tools(args)?;
         self.validate_selected_tags(args)?;
 
         let selected = self.selected_tools(args);
         self.validate_dependencies_exist(&selected)?;
         self.validate_no_dependency_cycles(&selected)?;
-        self.resolve_tools(selected)
+        let mut selected_tools: Vec<&str> = selected.iter().copied().collect();
+        selected_tools.sort_unstable();
+        let tool_chain = self.resolve_tools(selected)?;
+
+        Ok(ToolPlan {
+            selected_tools,
+            tool_chain,
+        })
     }
 
     /// Validates the entire manifest dependency graph.
@@ -36,12 +53,23 @@ impl<'a> ToolPlanner<'a> {
     }
 
     /// Expands explicit names and tags; an empty selection means every tool.
-    fn selected_tools<'b>(&'b self, args: &'b SelectionArgs) -> HashSet<&'b str> {
+    fn selected_tools(&self, args: &SelectionArgs) -> HashSet<&'a str> {
         if args.tools.is_empty() && args.tags.is_empty() {
             return self.manifest.tools.keys().map(String::as_str).collect();
         }
 
-        let mut selected: HashSet<&str> = args.tools.iter().map(String::as_str).collect();
+        let mut selected: HashSet<&str> = args
+            .tools
+            .iter()
+            .map(|name| {
+                self.manifest
+                    .tools
+                    .get_key_value(name)
+                    .expect("selected tool names should already be validated")
+                    .0
+                    .as_str()
+            })
+            .collect();
 
         for (tool_name, tool) in &self.manifest.tools {
             let matches_tag = args
@@ -243,7 +271,7 @@ mod tests {
         let plan = ToolPlanner::new(&manifest)
             .plan(&selection(&[], &[]))
             .unwrap();
-        assert_eq!(plan, vec!["git", "neovim", "rust"]);
+        assert_eq!(plan.tool_chain, vec!["git", "neovim", "rust"]);
     }
 
     #[test]
@@ -253,7 +281,8 @@ mod tests {
         let plan = ToolPlanner::new(&manifest)
             .plan(&selection(&["rust"], &["core"]))
             .unwrap();
-        assert_eq!(plan, vec!["git", "rust"]);
+        assert_eq!(plan.tool_chain, vec!["git", "rust"]);
+        assert_eq!(plan.selected_tools, vec!["git", "rust"]);
     }
 
     #[test]
@@ -266,7 +295,8 @@ mod tests {
         let plan = ToolPlanner::new(&manifest)
             .plan(&selection(&["git", "neovim"], &[]))
             .unwrap();
-        assert_eq!(plan, vec!["runtime", "git", "neovim"]);
+        assert_eq!(plan.tool_chain, vec!["runtime", "git", "neovim"]);
+        assert_eq!(plan.selected_tools, vec!["git", "neovim"]);
     }
 
     #[test]
