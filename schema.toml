@@ -1,32 +1,76 @@
+# Representative dotstrap manifest for schema documentation and tests.
 version = 1
 
-[package_managers.packman]
-description = "This is my package manager"
-platform = "windows_x64"
-check = "get"
-hint = "get not found"
+# Package-manager names are user-defined. A platform can define more than one
+# manager; installation may proceed when any manager check is available.
+[package_managers.apt]
+description = "Debian and Ubuntu package manager"
+platform = "linux_x64"
+check = "apt-get"
+hint = "Install apt-get or select a compatible platform."
 
+[package_managers.choco]
+description = "Chocolatey package manager"
+platform = "windows_x64"
+check = "choco"
+hint = "Run from an Administrator terminal with Chocolatey installed."
+
+# A minimal tool may omit every optional field.
+[tools.compiler]
+
+# Dependencies are processed before the tool which declares them.
+[tools.rust]
+description = "Rust toolchain and Cargo"
+deps = ["compiler"]
+tags = ["development", "all"]
+check = "cargo"
+
+[tools.rust.install]
+linux_x64 = [
+    "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+]
+windows_x64 = [
+    'Invoke-WebRequest -Uri "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe" -OutFile "$env:TEMP/rustup-init.exe"',
+    'Start-Process -FilePath "$env:TEMP/rustup-init.exe" -ArgumentList "-y" -Wait',
+]
+
+# Tools may combine dependencies, tags, platform installs, and one config link.
 [tools.git]
 description = "Distributed version control"
 deps = ["rust"]
-tags = ["core"]
+tags = ["core", "development", "all"]
 check = "git"
 
 [tools.git.install]
 linux_x64 = [
     "sudo apt-get update",
-    "sudo apt-get install -y git"
+    "sudo apt-get install -y git",
 ]
-
-windows_x64 = [
-    "choco install git -y"
-]
+windows_x64 = ["choco install git -y"]
 
 [tools.git.configs]
 description = "Git configuration"
 source = "git/.gitconfig"
 
 [tools.git.configs.targets]
-Linux_x64 = "~/.gitconfig"
+linux_x64 = "~/.gitconfig"
 windows_x64 = "~/.gitconfig"
 
+# This tool demonstrates a shared dependency and a directory configuration.
+[tools.neovim]
+description = "Neovim editor"
+deps = ["git", "rust"]
+tags = ["editor", "development", "all"]
+check = "nvim"
+
+[tools.neovim.install]
+linux_x64 = ["sudo apt-get install -y neovim"]
+windows_x64 = ["choco install neovim -y"]
+
+[tools.neovim.configs]
+description = "Neovim configuration directory"
+source = "nvim"
+
+[tools.neovim.configs.targets]
+linux_x64 = "~/.config/nvim"
+windows_x64 = "~/AppData/Local/nvim"

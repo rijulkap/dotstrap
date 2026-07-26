@@ -1,3 +1,11 @@
+//! Legacy host-platform detection helpers.
+//!
+//! This module is not currently wired into the command-line application; the
+//! platform is supplied explicitly with `--os`.
+
+/// Returns the legacy manifest platform name inferred at compile time.
+///
+/// Unsupported operating-system and architecture combinations return `None`.
 pub fn get_os() -> Option<&'static str> {
     if cfg!(target_os = "windows") {
         Some("windows")
