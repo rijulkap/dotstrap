@@ -80,8 +80,13 @@ impl<'a> Manager<'a> {
 
     /// Installs a tool unless its check executable is already available.
     fn install_tool(&self, tool_name: &str, tool: &Tool) -> Result<(), String> {
+        let check = tool
+            .check
+            .as_ref()
+            .and_then(|check| check.for_platform(self.os));
+
         if !self.should_force(tool_name)
-            && let Some(check) = tool.check.as_deref()
+            && let Some(check) = check
             && executable_exists(check)
         {
             println!("----> Skipping `{tool_name}` (`{check}` is already available)");
@@ -106,7 +111,7 @@ impl<'a> Manager<'a> {
             .map_err(|error| format!("installed `{tool_name}`, but {error}"))?;
 
         if !self.should_force(tool_name)
-            && let Some(check) = tool.check.as_deref()
+            && let Some(check) = check
             && !executable_exists(check)
         {
             return Err(format!(
@@ -174,7 +179,7 @@ impl<'a> Manager<'a> {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::dotfile::Config;
+    use crate::dotfile::{Config, ToolCheck};
 
     use super::*;
 
@@ -191,7 +196,7 @@ mod tests {
             description: None,
             deps: None,
             tags: None,
-            check: check.map(ToOwned::to_owned),
+            check: check.map(|check| ToolCheck::Command(check.to_owned())),
             install: install.map(|commands| HashMap::from([("linux_x64".to_owned(), commands)])),
             configs: config,
         }

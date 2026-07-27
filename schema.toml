@@ -18,6 +18,18 @@ hint = "Run from an Administrator terminal with Chocolatey installed."
 # A minimal tool may omit every optional field.
 [tools.compiler]
 
+# Checks can vary when distributions expose an executable under different names.
+[tools.fd]
+description = "Fast file finder"
+tags = ["development", "all"]
+check = { linux_x64 = "fdfind", windows_x64 = "fd", macos_x64 = "fd", macos_aarch64 = "fd" }
+
+[tools.fd.install]
+linux_x64 = ["sudo apt-get install -y fd-find"]
+windows_x64 = ["choco install fd -y"]
+macos_x64 = ["brew install fd"]
+macos_aarch64 = ["brew install fd"]
+
 # Dependencies are processed before the tool which declares them.
 [tools.rust]
 description = "Rust toolchain and Cargo"

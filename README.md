@@ -73,6 +73,21 @@ install commands, file configuration, and directory configuration.
 Tool dependencies use `deps`. Installation commands and configuration targets
 are selected using the exact platform key passed to `--os`.
 
+A tool check may be one executable shared by every platform:
+
+```toml
+check = "git"
+```
+
+It may instead provide platform-specific executable names:
+
+```toml
+check = { linux_x64 = "fdfind", windows_x64 = "fd" }
+```
+
+When the current platform is absent from a platform-specific check, dotstrap
+runs the installer without performing a pre-install or post-install check.
+
 Commands belonging to one tool run in order inside one shell, allowing values
 such as environment variables to carry between those commands. Each tool gets
 a fresh shell. Installed tools with a successful `check` executable are

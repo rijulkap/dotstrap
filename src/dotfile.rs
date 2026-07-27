@@ -48,14 +48,35 @@ pub struct Tool {
     /// Labels used to select groups of tools from the command line.
     pub tags: Option<Vec<String>>,
 
-    /// Executable whose presence indicates that the tool is installed.
-    pub check: Option<String>,
+    /// Executable check shared across platforms or selected by platform.
+    pub check: Option<ToolCheck>,
 
     /// Ordered shell commands indexed by platform key.
     pub install: Option<HashMap<String, Vec<String>>>,
 
     /// Optional configuration source and platform-specific link targets.
     pub configs: Option<Config>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+/// Tool availability check in shared or platform-specific form.
+pub enum ToolCheck {
+    /// One executable name used on every platform.
+    Command(String),
+
+    /// Executable names indexed by manifest platform key.
+    ByPlatform(HashMap<String, String>),
+}
+
+impl ToolCheck {
+    /// Returns the executable check applicable to a platform, if configured.
+    pub fn for_platform(&self, platform: &str) -> Option<&str> {
+        match self {
+            Self::Command(command) => Some(command),
+            Self::ByPlatform(commands) => commands.get(platform).map(String::as_str),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -112,7 +133,7 @@ mod tests {
 
         assert_eq!(manifest.version, 1);
         assert_eq!(manifest.package_managers.len(), 2);
-        assert_eq!(manifest.tools.len(), 4);
+        assert_eq!(manifest.tools.len(), 5);
 
         let apt = &manifest.package_managers["apt"];
         assert_eq!(apt.platform, "linux_x64");
@@ -128,7 +149,12 @@ mod tests {
         let git = &manifest.tools["git"];
         assert_eq!(git.deps.as_deref().unwrap(), ["rust"]);
         assert!(git.tags.as_ref().unwrap().contains(&"core".to_owned()));
-        assert_eq!(git.check.as_deref(), Some("git"));
+        assert_eq!(
+            git.check
+                .as_ref()
+                .and_then(|check| check.for_platform("linux_x64")),
+            Some("git")
+        );
         assert_eq!(git.install.as_ref().unwrap()["linux_x64"].len(), 2);
 
         let config = git.configs.as_ref().unwrap();
@@ -137,6 +163,12 @@ mod tests {
 
         let neovim = &manifest.tools["neovim"];
         assert_eq!(neovim.deps.as_deref().unwrap(), ["git", "rust"]);
+
+        let fd = &manifest.tools["fd"];
+        let fd_check = fd.check.as_ref().unwrap();
+        assert_eq!(fd_check.for_platform("linux_x64"), Some("fdfind"));
+        assert_eq!(fd_check.for_platform("windows_x64"), Some("fd"));
+        assert_eq!(fd_check.for_platform("freebsd_x64"), None);
     }
 
     #[test]
