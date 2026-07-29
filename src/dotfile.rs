@@ -94,8 +94,17 @@ pub struct Config {
 }
 
 /// Reads a TOML manifest and anchors relative config sources to its directory.
+///
+/// The manifest path is canonicalized first, making resolved sources independent
+/// of the process working directory after loading.
 pub fn load_manifest(path: &str) -> Result<Manifest, String> {
-    let path = PathBuf::from(path);
+    let requested_path = PathBuf::from(path);
+    let path = fs::canonicalize(&requested_path).map_err(|error| {
+        format!(
+            "failed to resolve manifest path {}: {error}",
+            requested_path.display()
+        )
+    })?;
     let text = fs::read_to_string(&path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     let mut manifest: Manifest = toml::from_str(&text)
@@ -103,8 +112,7 @@ pub fn load_manifest(path: &str) -> Result<Manifest, String> {
 
     let manifest_dir = path
         .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+        .expect("a canonical manifest path should always have a parent");
 
     for tool in manifest.tools.values_mut() {
         let Some(config) = tool.configs.as_mut() else {
@@ -198,6 +206,7 @@ mod tests {
             PathBuf::from(&manifest.tools["git"].configs.as_ref().unwrap().source),
             directory.join("git/.gitconfig")
         );
+        assert!(Path::new(&manifest.tools["git"].configs.as_ref().unwrap().source).is_absolute());
 
         fs::remove_file(path).unwrap();
         fs::remove_dir(directory).unwrap();

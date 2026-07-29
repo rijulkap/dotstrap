@@ -93,9 +93,10 @@ such as environment variables to carry between those commands. Each tool gets
 a fresh shell. Installed tools with a successful `check` executable are
 skipped.
 
-Relative configuration sources are resolved from the directory containing the
-manifest. A leading `~` in a configuration target is expanded to the current
-user's home directory.
+Relative configuration sources are resolved from the canonical parent directory
+of the manifest, independently of the directory from which dotstrap is run. A
+leading `~` in a configuration target is expanded to the current user's home
+directory.
 
 ## Development
 
