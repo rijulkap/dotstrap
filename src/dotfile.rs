@@ -202,9 +202,10 @@ mod tests {
         .unwrap();
 
         let manifest = load_manifest(path.to_str().unwrap()).unwrap();
+        let canonical_directory = fs::canonicalize(&directory).unwrap();
         assert_eq!(
             PathBuf::from(&manifest.tools["git"].configs.as_ref().unwrap().source),
-            directory.join("git/.gitconfig")
+            canonical_directory.join("git/.gitconfig")
         );
         assert!(Path::new(&manifest.tools["git"].configs.as_ref().unwrap().source).is_absolute());
 
