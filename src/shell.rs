@@ -33,18 +33,59 @@ pub fn executable_exists(executable: &str) -> bool {
 /// Creates a platform-appropriate symlink after expanding a leading home marker.
 ///
 /// Missing parent directories for the target are created automatically.
-pub fn create_symlink(source: &str, target: &str) -> bool {
-    let Some(target) = expand_home(target) else {
-        return false;
-    };
+pub fn create_symlink(source: &str, target: &str) -> Result<(), String> {
+    let target =
+        expand_home(target).ok_or_else(|| format!("cannot expand home in target `{target}`"))?;
+    let source = Path::new(source);
 
-    if let Some(parent) = target.parent()
-        && std::fs::create_dir_all(parent).is_err()
-    {
-        return false;
+    let source_metadata = std::fs::metadata(source)
+        .map_err(|error| format!("cannot inspect source `{}`: {error}", source.display()))?;
+
+    match std::fs::symlink_metadata(&target) {
+        Ok(metadata) => {
+            let kind = if metadata.file_type().is_symlink() {
+                "symbolic link"
+            } else if metadata.is_dir() {
+                "directory"
+            } else {
+                "file"
+            };
+            return Err(format!(
+                "target `{}` already exists as a {kind}; move or remove it before configuring",
+                target.display()
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "cannot inspect target `{}`: {error}",
+                target.display()
+            ));
+        }
     }
 
-    symlink::symlink_auto(source, target).is_ok()
+    if let Some(parent) = target.parent()
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        return Err(format!(
+            "cannot create target directory `{}`: {error}",
+            parent.display()
+        ));
+    }
+
+    let result = if source_metadata.is_dir() {
+        symlink::symlink_dir(source, &target)
+    } else {
+        symlink::symlink_file(source, &target)
+    };
+
+    result.map_err(|error| {
+        format!(
+            "cannot link `{}` to `{}`: {error}",
+            source.display(),
+            target.display()
+        )
+    })
 }
 
 /// Removes a symlink target without deleting ordinary files or directories.
@@ -414,6 +455,27 @@ mod tests {
         assert!(!executable_exists(
             "dotstrap-test-executable-that-does-not-exist"
         ));
+    }
+
+    #[test]
+    fn reports_an_existing_symlink_target() {
+        let directory = std::env::temp_dir().join(format!(
+            "dotstrap-existing-target-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("source");
+        let target = directory.join("target");
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&target, "existing").unwrap();
+
+        let error = create_symlink(source.to_str().unwrap(), target.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("already exists as a file"));
+        assert!(error.contains(&target.display().to_string()));
+
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_file(source).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[cfg(not(windows))]

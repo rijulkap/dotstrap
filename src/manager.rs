@@ -140,12 +140,8 @@ impl<'a> Manager<'a> {
 
         println!("Linking `{}` -> `{target}`", config.source);
 
-        if !create_symlink(&config.source, target) {
-            return Err(format!(
-                "failed to create symlink for tool `{tool_name}`: `{}` -> `{target}`",
-                config.source
-            ));
-        }
+        create_symlink(&config.source, target)
+            .map_err(|error| format!("failed to configure tool `{tool_name}`: {error}"))?;
 
         Ok(())
     }
