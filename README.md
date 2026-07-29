@@ -52,7 +52,11 @@ Available subcommands are:
 - `remove-symlinks`
 - `validate`
 
+When no subcommand is supplied, `install-and-configure` is used.
 An empty tool/tag selection means all tools.
+
+On Windows, dotstrap checks that it is running in an elevated Administrator
+PowerShell or terminal before validating or changing anything.
 
 `remove-symlinks` removes configuration targets only when they are symbolic
 links. Missing targets are ignored, while ordinary files and directories are

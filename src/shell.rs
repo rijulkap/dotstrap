@@ -170,6 +170,20 @@ pub fn ensure_command_privileges(commands: &[String]) -> Result<(), String> {
     }
 }
 
+/// Requires an elevated administrator process on Windows.
+///
+/// Other platforms pass this preflight without doing any work.
+pub fn ensure_windows_administrator() -> Result<(), String> {
+    if windows_process_is_elevated()? {
+        Ok(())
+    } else {
+        Err(
+            "dotstrap must be run from an Administrator PowerShell or terminal on Windows"
+                .to_owned(),
+        )
+    }
+}
+
 /// Refreshes the effective Windows PATH from machine and user environment data.
 ///
 /// The refreshed value is retained inside the process helpers rather than

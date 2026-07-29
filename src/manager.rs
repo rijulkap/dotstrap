@@ -179,6 +179,7 @@ impl<'a> Manager<'a> {
 mod tests {
     use std::collections::HashMap;
 
+    #[cfg(unix)]
     use crate::dotfile::{Config, ToolCheck};
 
     use super::*;
@@ -191,6 +192,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn tool(check: Option<&str>, install: Option<Vec<String>>, config: Option<Config>) -> Tool {
         Tool {
             description: None,

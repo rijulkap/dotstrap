@@ -8,6 +8,7 @@ mod planner;
 mod validation;
 
 use clap::{Args, Parser, Subcommand};
+use std::sync::LazyLock;
 
 use crate::dotfile::{Manifest, load_manifest};
 
@@ -44,10 +45,18 @@ pub struct DotManager {
     #[arg(long, global = true, conflicts_with = "force")]
     pub force_all: bool,
 
-    /// Operation to perform after validation.
+    /// Operation to perform after validation. Defaults to install-and-configure.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
+
+/// Default operation used when no subcommand is supplied.
+pub static DEFAULT_COMMAND: LazyLock<Command> = LazyLock::new(|| {
+    Command::InstallAndConfigure(SelectionArgs {
+        tools: Vec::new(),
+        tags: Vec::new(),
+    })
+});
 
 #[derive(Debug, Subcommand)]
 /// Operations supported by the command-line interface.
@@ -106,7 +115,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Command::Install(args) => {
+            Some(Command::Install(args)) => {
                 assert_eq!(args.tools, vec!["git", "neovim"]);
             }
             _ => panic!("expected install command"),
@@ -131,9 +140,27 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Command::RemoveSymlinks(args) => assert_eq!(args.tools, vec!["git"]),
+            Some(Command::RemoveSymlinks(args)) => assert_eq!(args.tools, vec!["git"]),
             _ => panic!("expected remove-symlinks command"),
         }
+    }
+
+    #[test]
+    fn defaults_to_install_and_configure() {
+        let cli = DotManager::try_parse_from([
+            "dotman",
+            "--manifest",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("schema.toml")
+                .to_str()
+                .unwrap(),
+            "--os",
+            "windows_x64",
+        ])
+        .unwrap();
+
+        assert!(cli.command.is_none());
+        assert!(matches!(&*DEFAULT_COMMAND, Command::InstallAndConfigure(_)));
     }
 
     #[test]

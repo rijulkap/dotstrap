@@ -14,9 +14,15 @@ mod shell;
 
 use clap::Parser;
 use cli::DotManager;
+use shell::ensure_windows_administrator;
 
 /// Parses the command line, validates it, and executes the resulting plan.
 fn main() {
+    if let Err(error) = ensure_windows_administrator() {
+        eprintln!("error: {error}");
+        std::process::exit(2);
+    }
+
     let dotman = DotManager::parse();
 
     let manager = match dotman.validate() {

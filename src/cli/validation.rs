@@ -6,7 +6,7 @@ use crate::manager::Manager;
 use crate::shell::executable_exists;
 
 use super::planner::ToolPlanner;
-use super::{Command, DotManager, SelectionArgs};
+use super::{Command, DEFAULT_COMMAND, DotManager, SelectionArgs};
 
 impl DotManager {
     /// Validates the request and builds an executable manager when appropriate.
@@ -17,23 +17,24 @@ impl DotManager {
         self.validate_manifest_version()?;
         let planner = ToolPlanner::new(&self.manifest);
 
-        match &self.command {
+        let command = self.command.as_ref().unwrap_or(&DEFAULT_COMMAND);
+        match command {
             Command::Install(args) => {
                 self.validate_package_manager()?;
-                self.manager_for(args, &planner).map(Some)
+                self.manager_for(args, command, &planner).map(Some)
             }
             Command::Configure(args) => {
-                let manager = self.manager_for(args, &planner)?;
+                let manager = self.manager_for(args, command, &planner)?;
                 self.validate_config_sources(&manager.tool_chain)?;
                 Ok(Some(manager))
             }
             Command::InstallAndConfigure(args) => {
                 self.validate_package_manager()?;
-                let manager = self.manager_for(args, &planner)?;
+                let manager = self.manager_for(args, command, &planner)?;
                 self.validate_config_sources(&manager.tool_chain)?;
                 Ok(Some(manager))
             }
-            Command::RemoveSymlinks(args) => self.manager_for(args, &planner).map(Some),
+            Command::RemoveSymlinks(args) => self.manager_for(args, command, &planner).map(Some),
             Command::Validate => {
                 planner.validate_all()?;
                 let all_tools: Vec<&str> = self.manifest.tools.keys().map(String::as_str).collect();
@@ -47,6 +48,7 @@ impl DotManager {
     fn manager_for<'a>(
         &'a self,
         args: &SelectionArgs,
+        command: &'a Command,
         planner: &ToolPlanner<'a>,
     ) -> Result<Manager<'a>, String> {
         let plan = planner.plan(args)?;
@@ -55,7 +57,7 @@ impl DotManager {
             manifest: &self.manifest,
             tool_chain: plan.tool_chain,
             selected_tools: plan.selected_tools,
-            selected_command: &self.command,
+            selected_command: command,
             force: self.force,
             force_all: self.force_all,
         })
@@ -177,7 +179,7 @@ mod tests {
             verbose: false,
             force: false,
             force_all: false,
-            command,
+            command: Some(command),
         }
     }
 
