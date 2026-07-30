@@ -1,19 +1,25 @@
 # Representative dotstrap manifest for schema documentation and tests.
 version = 1
 
-# Package-manager names are user-defined. A platform can define more than one
-# manager; installation may proceed when any manager check is available.
-[package_managers.apt]
+# Package managers are regular prerequisite tools. Platform-specific checks make
+# each one active only on platforms where it applies.
+[tools.apt]
 description = "Debian and Ubuntu package manager"
-platform = "linux_x64"
-check = "apt-get"
 hint = "Install apt-get or select a compatible platform."
+tags = ["package-manager"]
+check = { linux_x64 = "apt-get" }
 
-[package_managers.choco]
+[tools.choco]
 description = "Chocolatey package manager"
-platform = "windows_x64"
-check = "choco"
 hint = "Run from an Administrator terminal with Chocolatey installed."
+tags = ["package-manager"]
+check = { windows_x64 = "choco" }
+
+[tools.homebrew]
+description = "Homebrew package manager"
+hint = "Install Homebrew from https://brew.sh."
+tags = ["package-manager"]
+check = { macos_x64 = "brew", macos_aarch64 = "brew" }
 
 # A minimal tool may omit every optional field.
 [tools.compiler]
@@ -21,6 +27,7 @@ hint = "Run from an Administrator terminal with Chocolatey installed."
 # Checks can vary when distributions expose an executable under different names.
 [tools.fd]
 description = "Fast file finder"
+deps = ["apt", "choco", "homebrew"]
 tags = ["development", "all"]
 check = { linux_x64 = "fdfind", windows_x64 = "fd", macos_x64 = "fd", macos_aarch64 = "fd" }
 
@@ -49,7 +56,7 @@ windows_x64 = [
 # Tools may combine dependencies, tags, platform installs, and one config link.
 [tools.git]
 description = "Distributed version control"
-deps = ["rust"]
+deps = ["apt", "choco", "homebrew", "rust"]
 tags = ["core", "development", "all"]
 check = "git"
 
@@ -59,6 +66,8 @@ linux_x64 = [
     "sudo apt-get install -y git",
 ]
 windows_x64 = ["choco install git -y"]
+macos_x64 = ["brew install git"]
+macos_aarch64 = ["brew install git"]
 
 [tools.git.configs]
 description = "Git configuration"
@@ -67,8 +76,10 @@ source = "git/.gitconfig"
 [tools.git.configs.targets]
 linux_x64 = "~/.gitconfig"
 windows_x64 = "~/.gitconfig"
+macos_x64 = "~/.gitconfig"
+macos_aarch64 = "~/.gitconfig"
 
-# This tool demonstrates a shared dependency and a directory configuration.
+# This tool demonstrates shared dependencies and a directory configuration.
 [tools.neovim]
 description = "Neovim editor"
 deps = ["git", "rust"]
@@ -78,6 +89,8 @@ check = "nvim"
 [tools.neovim.install]
 linux_x64 = ["sudo apt-get install -y neovim"]
 windows_x64 = ["choco install neovim -y"]
+macos_x64 = ["brew install neovim"]
+macos_aarch64 = ["brew install neovim"]
 
 [tools.neovim.configs]
 description = "Neovim configuration directory"
@@ -86,3 +99,5 @@ source = "nvim"
 [tools.neovim.configs.targets]
 linux_x64 = "~/.config/nvim"
 windows_x64 = "~/AppData/Local/nvim"
+macos_x64 = "~/.config/nvim"
+macos_aarch64 = "~/.config/nvim"

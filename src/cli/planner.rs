@@ -255,7 +255,7 @@ mod tests {
     use crate::dotfile::Manifest;
 
     fn manifest(tools_toml: &str) -> Manifest {
-        toml::from_str(&format!("version = 1\n[package_managers]\n{tools_toml}")).unwrap()
+        toml::from_str(&format!("version = 1\n{tools_toml}")).unwrap()
     }
 
     fn selection(tools: &[&str], tags: &[&str]) -> SelectionArgs {

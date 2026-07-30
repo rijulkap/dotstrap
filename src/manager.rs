@@ -84,20 +84,32 @@ impl<'a> Manager<'a> {
             .check
             .as_ref()
             .and_then(|check| check.for_platform(self.os));
+        let check_available = check.is_some_and(executable_exists);
 
-        if !self.should_force(tool_name)
-            && let Some(check) = check
-            && executable_exists(check)
-        {
+        if !self.should_force(tool_name) && check_available {
+            let check = check.expect("an available check should be configured");
             println!("----> Skipping `{tool_name}` (`{check}` is already available)");
             return Ok(());
         }
 
-        let Some(install_commands) = tool.install.as_ref() else {
-            return Ok(());
-        };
-
-        let Some(commands) = install_commands.get(self.os) else {
+        let commands = tool
+            .install
+            .as_ref()
+            .and_then(|commands| commands.get(self.os));
+        let Some(commands) = commands else {
+            if let Some(check) = check
+                && !check_available
+            {
+                let hint = tool
+                    .hint
+                    .as_deref()
+                    .map(|hint| format!(" ({hint})"))
+                    .unwrap_or_default();
+                return Err(format!(
+                    "required tool `{tool_name}` failed check `{check}` and has no install commands for '{}'{hint}",
+                    self.os
+                ));
+            }
             return Ok(());
         };
 
@@ -183,7 +195,6 @@ mod tests {
     fn empty_manifest() -> Manifest {
         Manifest {
             version: 1,
-            package_managers: HashMap::new(),
             tools: HashMap::new(),
         }
     }
@@ -192,6 +203,7 @@ mod tests {
     fn tool(check: Option<&str>, install: Option<Vec<String>>, config: Option<Config>) -> Tool {
         Tool {
             description: None,
+            hint: None,
             deps: None,
             tags: None,
             check: check.map(|check| ToolCheck::Command(check.to_owned())),
@@ -324,5 +336,35 @@ mod tests {
         };
         assert!(force_all_manager.should_force("selected"));
         assert!(force_all_manager.should_force("dependency"));
+    }
+
+    #[test]
+    fn unavailable_checked_prerequisite_reports_its_hint() {
+        let mut prerequisite = tool(
+            Some("dotstrap-test-executable-that-does-not-exist"),
+            None,
+            None,
+        );
+        prerequisite.hint = Some("Install the prerequisite first.".to_owned());
+        let manifest = empty_manifest();
+        let command = Command::Install(crate::cli::SelectionArgs {
+            tools: Vec::new(),
+            tags: Vec::new(),
+        });
+        let manager = Manager {
+            os: "linux_x64",
+            manifest: &manifest,
+            tool_chain: vec!["prerequisite"],
+            selected_tools: vec!["prerequisite"],
+            selected_command: &command,
+            force: false,
+            force_all: false,
+        };
+
+        let error = manager
+            .install_tool("prerequisite", &prerequisite)
+            .unwrap_err();
+        assert!(error.contains("has no install commands for 'linux_x64'"));
+        assert!(error.contains("Install the prerequisite first."));
     }
 }

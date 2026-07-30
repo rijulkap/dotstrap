@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use crate::manager::Manager;
-use crate::shell::executable_exists;
 
 use super::planner::ToolPlanner;
 use super::{Command, DEFAULT_COMMAND, DotManager, SelectionArgs};
@@ -19,17 +18,13 @@ impl DotManager {
 
         let command = self.command.as_ref().unwrap_or(&DEFAULT_COMMAND);
         match command {
-            Command::Install(args) => {
-                self.validate_package_manager()?;
-                self.manager_for(args, command, &planner).map(Some)
-            }
+            Command::Install(args) => self.manager_for(args, command, &planner).map(Some),
             Command::Configure(args) => {
                 let manager = self.manager_for(args, command, &planner)?;
                 self.validate_config_sources(&manager.tool_chain)?;
                 Ok(Some(manager))
             }
             Command::InstallAndConfigure(args) => {
-                self.validate_package_manager()?;
                 let manager = self.manager_for(args, command, &planner)?;
                 self.validate_config_sources(&manager.tool_chain)?;
                 Ok(Some(manager))
@@ -96,53 +91,6 @@ impl DotManager {
         }
         Ok(())
     }
-
-    /// Ensures a configured package manager for the platform is available.
-    fn validate_package_manager(&self) -> Result<(), String> {
-        let managers: Vec<_> = self
-            .manifest
-            .package_managers
-            .iter()
-            .filter(|(_, manager)| manager.platform == self.os)
-            .collect();
-
-        if managers.is_empty() {
-            return Err(format!(
-                "operating system '{}' has no configured package manager",
-                self.os
-            ));
-        }
-
-        let mut errors = Vec::new();
-        for (name, manager) in managers {
-            let Some(check) = &manager.check else {
-                continue;
-            };
-            if executable_exists(check) {
-                return Ok(());
-            }
-
-            let hint = manager
-                .hint
-                .as_deref()
-                .map(|hint| format!(" ({hint})"))
-                .unwrap_or_default();
-            errors.push(format!("`{name}` failed check `{check}`{hint}"));
-        }
-
-        if errors.is_empty() {
-            Err(format!(
-                "no package manager check is defined for '{}'",
-                self.os
-            ))
-        } else {
-            Err(format!(
-                "no available package manager found for '{}': {}",
-                self.os,
-                errors.join(", ")
-            ))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -156,6 +104,7 @@ mod tests {
     fn tool_with_source(source: &str) -> Tool {
         Tool {
             description: None,
+            hint: None,
             deps: None,
             tags: None,
             check: None,
@@ -172,7 +121,6 @@ mod tests {
         DotManager {
             manifest: Manifest {
                 version,
-                package_managers: HashMap::new(),
                 tools: HashMap::from([("test".to_owned(), tool)]),
             },
             os: "linux_x64".to_owned(),
@@ -221,14 +169,5 @@ mod tests {
             tool_with_source("/dotstrap/test/path/that/does/not/exist"),
         );
         assert!(cli.validate().is_ok());
-    }
-
-    #[test]
-    fn install_requires_a_package_manager_for_the_platform() {
-        let cli = cli(1, Command::Install(selection()), tool_with_source("."));
-        assert_eq!(
-            cli.validate().unwrap_err(),
-            "operating system 'linux_x64' has no configured package manager"
-        );
     }
 }

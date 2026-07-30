@@ -11,28 +11,8 @@ pub struct Manifest {
     /// Manifest schema version. The current application accepts version `1`.
     pub version: u32,
 
-    /// Package managers indexed by a user-defined name.
-    pub package_managers: HashMap<String, PackageManager>,
-
     /// Installable and configurable tools indexed by tool name.
     pub tools: HashMap<String, Tool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
-/// Package manager availability definition for one platform.
-pub struct PackageManager {
-    /// Optional human-readable description.
-    pub description: Option<String>,
-
-    /// Platform key for which this package manager is applicable.
-    pub platform: String,
-
-    /// Executable whose presence indicates that the manager is available.
-    pub check: Option<String>,
-
-    /// Optional remediation shown when the availability check fails.
-    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,6 +21,9 @@ pub struct PackageManager {
 pub struct Tool {
     /// Optional human-readable description.
     pub description: Option<String>,
+
+    /// Optional remediation shown when a required tool is unavailable.
+    pub hint: Option<String>,
 
     /// Other tools which must be processed before this tool.
     pub deps: Option<Vec<String>>,
@@ -140,12 +123,21 @@ mod tests {
         let manifest = toml::from_str::<Manifest>(&text).unwrap();
 
         assert_eq!(manifest.version, 1);
-        assert_eq!(manifest.package_managers.len(), 2);
-        assert_eq!(manifest.tools.len(), 5);
+        assert_eq!(manifest.tools.len(), 8);
 
-        let apt = &manifest.package_managers["apt"];
-        assert_eq!(apt.platform, "linux_x64");
-        assert_eq!(apt.check.as_deref(), Some("apt-get"));
+        let apt = &manifest.tools["apt"];
+        assert_eq!(
+            apt.check
+                .as_ref()
+                .and_then(|check| check.for_platform("linux_x64")),
+            Some("apt-get")
+        );
+        assert_eq!(
+            apt.check
+                .as_ref()
+                .and_then(|check| check.for_platform("windows_x64")),
+            None
+        );
         assert!(apt.description.is_some());
         assert!(apt.hint.is_some());
 
@@ -155,7 +147,10 @@ mod tests {
         assert!(compiler.configs.is_none());
 
         let git = &manifest.tools["git"];
-        assert_eq!(git.deps.as_deref().unwrap(), ["rust"]);
+        assert_eq!(
+            git.deps.as_deref().unwrap(),
+            ["apt", "choco", "homebrew", "rust"]
+        );
         assert!(git.tags.as_ref().unwrap().contains(&"core".to_owned()));
         assert_eq!(
             git.check
@@ -191,7 +186,6 @@ mod tests {
             &path,
             r#"
                 version = 1
-                [package_managers]
                 [tools.git]
                 [tools.git.configs]
                 source = "git/.gitconfig"

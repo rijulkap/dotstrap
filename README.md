@@ -92,6 +92,21 @@ check = { linux_x64 = "fdfind", windows_x64 = "fd" }
 When the current platform is absent from a platform-specific check, dotstrap
 runs the installer without performing a pre-install or post-install check.
 
+Package managers are modeled as ordinary prerequisite tools rather than a
+separate manifest section:
+
+```toml
+[tools.apt]
+hint = "Install apt-get before continuing."
+check = { linux_x64 = "apt-get" }
+
+[tools.git]
+deps = ["apt"]
+```
+
+A checked prerequisite with no installer is accepted when its executable is
+available. If it is unavailable, dotstrap stops with its optional `hint`.
+
 Commands belonging to one tool run in order inside one shell, allowing values
 such as environment variables to carry between those commands. Each tool gets
 a fresh shell. Installed tools with a successful `check` executable are
