@@ -105,10 +105,7 @@ impl<'a> Manager<'a> {
                     .as_deref()
                     .map(|hint| format!(" ({hint})"))
                     .unwrap_or_default();
-                return Err(format!(
-                    "required tool `{tool_name}` failed check `{check}` and has no install commands for '{}'{hint}",
-                    self.os
-                ));
+                println!( "----> Skipping tool `{tool_name}` failed check `{check}` and has no install commands for '{}'{hint}", self.os);
             }
             return Ok(());
         };
