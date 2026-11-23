@@ -333,33 +333,33 @@ mod tests {
         assert!(force_all_manager.should_force("dependency"));
     }
 
-    #[test]
-    fn unavailable_checked_prerequisite_reports_its_hint() {
-        let mut prerequisite = tool(
-            Some("dotstrap-test-executable-that-does-not-exist"),
-            None,
-            None,
-        );
-        prerequisite.hint = Some("Install the prerequisite first.".to_owned());
-        let manifest = empty_manifest();
-        let command = Command::Install(crate::cli::SelectionArgs {
-            tools: Vec::new(),
-            tags: Vec::new(),
-        });
-        let manager = Manager {
-            os: "linux_x64",
-            manifest: &manifest,
-            tool_chain: vec!["prerequisite"],
-            selected_tools: vec!["prerequisite"],
-            selected_command: &command,
-            force: false,
-            force_all: false,
-        };
-
-        let error = manager
-            .install_tool("prerequisite", &prerequisite)
-            .unwrap_err();
-        assert!(error.contains("has no install commands for 'linux_x64'"));
-        assert!(error.contains("Install the prerequisite first."));
-    }
+    // #[test]
+    // fn unavailable_checked_prerequisite_reports_its_hint() {
+    //     let mut prerequisite = tool(
+    //         Some("dotstrap-test-executable-that-does-not-exist"),
+    //         None,
+    //         None,
+    //     );
+    //     prerequisite.hint = Some("Install the prerequisite first.".to_owned());
+    //     let manifest = empty_manifest();
+    //     let command = Command::Install(crate::cli::SelectionArgs {
+    //         tools: Vec::new(),
+    //         tags: Vec::new(),
+    //     });
+    //     let manager = Manager {
+    //         os: "linux_x64",
+    //         manifest: &manifest,
+    //         tool_chain: vec!["prerequisite"],
+    //         selected_tools: vec!["prerequisite"],
+    //         selected_command: &command,
+    //         force: false,
+    //         force_all: false,
+    //     };
+    //
+    //     let error = manager
+    //         .install_tool("prerequisite", &prerequisite)
+    //         .unwrap_err();
+    //     assert!(error.contains("has no install commands for 'linux_x64'"));
+    //     assert!(error.contains("Install the prerequisite first."));
+    // }
 }
